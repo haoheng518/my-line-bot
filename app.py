@@ -9,8 +9,8 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
+    ContactMessage
 )
-from linebot.models.send_messages import ContactMessage  # ✅ 3.11.0 版本的导入路径
 
 app = Flask(__name__)
 
@@ -18,7 +18,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-print("=== 启动 LINE Bot 服务 ===")
+print("=== 启动 LINE Bot 服务 (Python 3.11) ===")
 print(f"LINE_CHANNEL_SECRET 是否设置: {bool(LINE_CHANNEL_SECRET)}")
 print(f"LINE_CHANNEL_ACCESS_TOKEN 是否设置: {bool(LINE_CHANNEL_ACCESS_TOKEN)}")
 
@@ -84,7 +84,6 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """发送 LINE 原生联系人卡片"""
     try:
         contact_message = ContactMessage(
             display_name=contact['name'],
@@ -97,8 +96,6 @@ def send_contact_card(user_id, contact):
     except Exception as e:
         print(f"发送联系人卡片失败: {e}")
         return False
-
-# ==================== 路由和处理器 ====================
 
 @app.route("/callback", methods=['POST'])
 def callback():
