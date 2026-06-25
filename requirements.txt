@@ -1,7 +1,5 @@
-line-bot-sdk
+line-bot-sdk>=3.0.0
 pandas
 openpyxl
 Flask
 gunicorn
-qrcode[pil]
-requests
