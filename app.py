@@ -3,7 +3,7 @@ import pandas as pd
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage, ContactMessage
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, Contact
 
 app = Flask(__name__)
 
@@ -28,6 +28,7 @@ def load_contacts():
         for _, row in df.iterrows():
             name = str(row['name']).strip()
             phone = ''.join(filter(str.isdigit, str(row['phone']).strip()))
+            # 只保留 10 位数字且以 09 开头的台湾手机号
             if len(phone) == 10 and phone.startswith('09'):
                 contacts.append({'name': name, 'phone': phone})
         return contacts
@@ -37,7 +38,8 @@ def load_contacts():
 
 def send_contact_card(user_id, contact):
     """发送联系人名片消息"""
-    contact_message = ContactMessage(
+    # 使用正确的 Contact 类
+    contact_message = Contact(
         display_name=contact['name'],
         name=contact['name'],
         phone_number=contact['phone']
