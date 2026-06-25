@@ -2,6 +2,8 @@ import os
 import sys
 import csv
 import re
+import json
+import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -9,7 +11,6 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
-    Contact  # ✅ 使用 Contact 类
 )
 
 app = Flask(__name__)
@@ -18,7 +19,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-print("=== 启动 LINE Bot 服务 (Python 3.11) ===")
+print("=== 启动 LINE Bot 服务 ===")
 print(f"LINE_CHANNEL_SECRET 是否设置: {bool(LINE_CHANNEL_SECRET)}")
 print(f"LINE_CHANNEL_ACCESS_TOKEN 是否设置: {bool(LINE_CHANNEL_ACCESS_TOKEN)}")
 
@@ -84,15 +85,31 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
+    """直接用 HTTP API 发送联系人卡片"""
     try:
-        contact_message = Contact(  # ✅ 使用 Contact 类
-            display_name=contact['name'],
-            name=contact['name'],
-            phone_number=contact['phone']
-        )
-        line_bot_api.push_message(user_id, contact_message)
-        print(f"✅ 已发送 {contact['name']} 的联系人卡片")
-        return True
+        url = "https://api.line.me/v2/bot/message/push"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+        }
+        payload = {
+            "to": user_id,
+            "messages": [
+                {
+                    "type": "contact",
+                    "displayName": contact['name'],
+                    "name": contact['name'],
+                    "phoneNumber": contact['phone']
+                }
+            ]
+        }
+        response = requests.post(url, headers=headers, json=payload)
+        if response.status_code == 200:
+            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
+            return True
+        else:
+            print(f"❌ 发送失败: {response.status_code} - {response.text}")
+            return False
     except Exception as e:
         print(f"发送联系人卡片失败: {e}")
         return False
