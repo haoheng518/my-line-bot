@@ -34,15 +34,19 @@ except Exception as e:
     sys.exit(1)
 
 CSV_FILE = 'contacts.csv'
+SENT_FILE = 'sent_contacts.csv'  # 用来记录已发送的联系人
 
-def load_contacts():
-    """从 CSV 读取联系人"""
+def load_available_contacts():
+    """
+    读取CSV，返回还没被发送过的联系人列表
+    """
     try:
         if not os.path.exists(CSV_FILE):
             print(f"警告: CSV 文件 '{CSV_FILE}' 不存在")
             return []
 
-        contacts = []
+        # 1. 读取所有联系人
+        all_contacts = []
         with open(CSV_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
@@ -55,16 +59,43 @@ def load_contacts():
                 name = row[0].strip()
                 phone_raw = row[1].strip() if len(row) > 1 else ''
                 phone = ''.join(filter(str.isdigit, phone_raw))
-
                 if len(phone) >= 9:
-                    contacts.append({'name': name, 'phone': phone})
+                    all_contacts.append({
+                        'name': name,
+                        'phone': phone,
+                        'raw_row': row  # 保存原始行，方便后续标记
+                    })
 
-        print(f"成功加载 {len(contacts)} 个联系人")
-        return contacts
+        # 2. 读取已发送记录
+        sent_phones = set()
+        if os.path.exists(SENT_FILE):
+            with open(SENT_FILE, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if row:
+                        sent_phones.add(row[0].strip())
+
+        # 3. 过滤掉已发送的
+        available = [c for c in all_contacts if c['phone'] not in sent_phones]
+        print(f"总共 {len(all_contacts)} 个联系人，已发送 {len(sent_phones)} 个，剩余 {len(available)} 个")
+        return available
 
     except Exception as e:
         print(f"读取 CSV 失败: {e}")
         return []
+
+def mark_as_sent(contacts):
+    """
+    将已发送的联系人记录到 sent_contacts.csv
+    """
+    try:
+        with open(SENT_FILE, 'a', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            for contact in contacts:
+                writer.writerow([contact['phone'], contact['name']])
+        print(f"✅ 已标记 {len(contacts)} 个联系人为已发送")
+    except Exception as e:
+        print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
     """发送联系人名片消息"""
@@ -76,10 +107,12 @@ def send_contact_card(user_id, contact):
         )
         line_bot_api.push_message(user_id, contact_message)
         print(f"已发送名片: {contact['name']} ({contact['phone']})")
+        return True
     except Exception as e:
         print(f"发送名片失败: {e}")
-        raise
+        return False
 
+# ==================== 路由和处理器 ====================
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -96,35 +129,73 @@ def handle_message(event):
     text = event.message.text.strip()
     print(f"收到消息: {text} from {user_id}")
 
-    contacts = load_contacts()
+    # 1. 检查是否是要数量的指令
+    if text.startswith("要"):
+        try:
+            # 提取数字，例如 "要10个粉" -> 10
+            import re
+            match = re.search(r'要(\d+)个', text)
+            if not match:
+                # 尝试匹配 "要10" 这种简写
+                match = re.search(r'要(\d+)', text)
+            if not match:
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text="请发送「要10个粉」或「要20个」这样的指令")
+                )
+                return
 
-    if text == "所有名片":
-        if not contacts:
-            line_bot_api.push_message(user_id, TextSendMessage(text="通讯录为空，请检查 CSV 文件。"))
-            return
-        for contact in contacts:
-            send_contact_card(user_id, contact)
-        line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已发送 {len(contacts)} 张名片"))
+            count = int(match.group(1))
+            if count <= 0:
+                line_bot_api.push_message(user_id, TextSendMessage(text="数量必须大于0"))
+                return
+            if count > 100:
+                line_bot_api.push_message(user_id, TextSendMessage(text="一次最多要100个，请分批领取"))
+                return
 
-    elif text.startswith("搜索"):
-        keyword = text.replace("搜索", "").strip()
-        if not keyword:
-            line_bot_api.push_message(user_id, TextSendMessage(text="请输入要搜索的姓名，例如「搜索 陳小姐」"))
-            return
-        results = [c for c in contacts if keyword in c['name']]
-        if not results:
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"❌ 未找到包含「{keyword}」的联系人"))
-        elif len(results) == 1:
-            send_contact_card(user_id, results[0])
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已发送 {results[0]['name']} 的名片"))
-        else:
-            names = "\n".join([f"{i+1}. {c['name']}" for i, c in enumerate(results[:10])])
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"找到 {len(results)} 个联系人，请输入完整姓名：\n{names}"))
+            # 2. 获取可用联系人
+            available = load_available_contacts()
+            if not available:
+                line_bot_api.push_message(user_id, TextSendMessage(text="🎉 所有名片已经发完了！"))
+                return
 
+            # 3. 取出前 N 个
+            to_send = available[:count]
+            if len(to_send) < count:
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
+                )
+
+            # 4. 逐一发送名片
+            success_count = 0
+            for contact in to_send:
+                if send_contact_card(user_id, contact):
+                    success_count += 1
+
+            # 5. 标记为已发送
+            mark_as_sent(to_send)
+
+            # 6. 发送完成通知
+            remaining = len(available) - len(to_send)
+            line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text=f"✅ 已发送 {success_count} 张名片\n📊 剩余 {remaining} 个待发")
+            )
+
+        except Exception as e:
+            print(f"处理指令出错: {e}")
+            line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text="处理出错，请稍后再试")
+            )
+        return
+
+    # 2. 其他指令：显示帮助
     else:
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text="请输入「所有名片」查看全部，或「搜索 姓名」查找特定联系人")
+            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张名片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
         )
 
 if __name__ == "__main__":
