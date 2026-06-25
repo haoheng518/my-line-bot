@@ -8,8 +8,8 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
+    Contact
 )
-from linebot.models.send_messages import ContactMessage  # ✅ 正确的导入路径
 
 app = Flask(__name__)
 
@@ -48,7 +48,6 @@ def load_contacts():
             for row in reader:
                 if not row:
                     continue
-                # 跳过可能的表头行
                 first_cell = row[0].strip()
                 if first_cell in ['姓名', '名字', 'name', '序号', '编号']:
                     continue
@@ -70,7 +69,7 @@ def load_contacts():
 def send_contact_card(user_id, contact):
     """发送联系人名片消息"""
     try:
-        contact_message = ContactMessage(
+        contact_message = Contact(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
@@ -81,7 +80,6 @@ def send_contact_card(user_id, contact):
         print(f"发送名片失败: {e}")
         raise
 
-# ==================== 路由和处理器 ====================
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
