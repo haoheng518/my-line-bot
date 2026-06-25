@@ -37,7 +37,7 @@ def load_contacts():
         if not os.path.exists(EXCEL_FILE):
             print(f"警告: Excel 文件 '{EXCEL_FILE}' 不存在")
             return []
-        df = pd.read_excel(EXCEL_FILE, sheet_name='Sheet2', header=None)
+        df = pd.read_excel(EXCEL_FILE, sheet_name='Sheet1', header=None)
         df.columns = ['name', 'phone']
         contacts = []
         for _, row in df.iterrows():
