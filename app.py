@@ -1,15 +1,12 @@
 import os
 import sys
 import csv
+import re
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import (
-    MessageEvent,
-    TextMessage,
-    TextSendMessage,
-    Contact
-)
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models.send_messages import ContactMessage
 
 app = Flask(__name__)
 
@@ -34,12 +31,10 @@ except Exception as e:
     sys.exit(1)
 
 CSV_FILE = 'contacts.csv'
-SENT_FILE = 'sent_contacts.csv'  # 用来记录已发送的联系人
+SENT_FILE = 'sent_contacts.csv'
 
 def load_available_contacts():
-    """
-    读取CSV，返回还没被发送过的联系人列表
-    """
+    """读取CSV，返回还没被发送过的联系人列表"""
     try:
         if not os.path.exists(CSV_FILE):
             print(f"警告: CSV 文件 '{CSV_FILE}' 不存在")
@@ -63,7 +58,7 @@ def load_available_contacts():
                     all_contacts.append({
                         'name': name,
                         'phone': phone,
-                        'raw_row': row  # 保存原始行，方便后续标记
+                        'raw_row': row
                     })
 
         # 2. 读取已发送记录
@@ -85,9 +80,7 @@ def load_available_contacts():
         return []
 
 def mark_as_sent(contacts):
-    """
-    将已发送的联系人记录到 sent_contacts.csv
-    """
+    """将已发送的联系人记录到 sent_contacts.csv"""
     try:
         with open(SENT_FILE, 'a', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
@@ -100,7 +93,7 @@ def mark_as_sent(contacts):
 def send_contact_card(user_id, contact):
     """发送联系人名片消息"""
     try:
-        contact_message = Contact(
+        contact_message = ContactMessage(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
@@ -132,11 +125,8 @@ def handle_message(event):
     # 1. 检查是否是要数量的指令
     if text.startswith("要"):
         try:
-            # 提取数字，例如 "要10个粉" -> 10
-            import re
             match = re.search(r'要(\d+)个', text)
             if not match:
-                # 尝试匹配 "要10" 这种简写
                 match = re.search(r'要(\d+)', text)
             if not match:
                 line_bot_api.push_message(
