@@ -19,7 +19,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-print("=== 启动 LINE Bot 服务 ===")
+print("=== 启动 LINE Bot 服务 (HTTP API 方案) ===")
 print(f"LINE_CHANNEL_SECRET 是否设置: {bool(LINE_CHANNEL_SECRET)}")
 print(f"LINE_CHANNEL_ACCESS_TOKEN 是否设置: {bool(LINE_CHANNEL_ACCESS_TOKEN)}")
 
@@ -85,7 +85,7 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """直接用 HTTP API 发送联系人卡片"""
+    """通过 HTTP API 直接发送联系人卡片"""
     try:
         url = "https://api.line.me/v2/bot/message/push"
         headers = {
