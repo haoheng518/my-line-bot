@@ -5,8 +5,12 @@ import re
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from linebot.models.send_messages import ContactMessage
+from linebot.models import (
+    MessageEvent,
+    TextMessage,
+    TextSendMessage,
+    Contact
+)
 
 app = Flask(__name__)
 
@@ -40,7 +44,6 @@ def load_available_contacts():
             print(f"警告: CSV 文件 '{CSV_FILE}' 不存在")
             return []
 
-        # 1. 读取所有联系人
         all_contacts = []
         with open(CSV_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -55,13 +58,8 @@ def load_available_contacts():
                 phone_raw = row[1].strip() if len(row) > 1 else ''
                 phone = ''.join(filter(str.isdigit, phone_raw))
                 if len(phone) >= 9:
-                    all_contacts.append({
-                        'name': name,
-                        'phone': phone,
-                        'raw_row': row
-                    })
+                    all_contacts.append({'name': name, 'phone': phone})
 
-        # 2. 读取已发送记录
         sent_phones = set()
         if os.path.exists(SENT_FILE):
             with open(SENT_FILE, 'r', encoding='utf-8') as f:
@@ -70,7 +68,6 @@ def load_available_contacts():
                     if row:
                         sent_phones.add(row[0].strip())
 
-        # 3. 过滤掉已发送的
         available = [c for c in all_contacts if c['phone'] not in sent_phones]
         print(f"总共 {len(all_contacts)} 个联系人，已发送 {len(sent_phones)} 个，剩余 {len(available)} 个")
         return available
@@ -91,9 +88,9 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """发送联系人名片消息"""
+    """发送联系人名片消息 - 使用 Contact 类"""
     try:
-        contact_message = ContactMessage(
+        contact_message = Contact(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
@@ -105,7 +102,6 @@ def send_contact_card(user_id, contact):
         print(f"发送名片失败: {e}")
         return False
 
-# ==================== 路由和处理器 ====================
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
@@ -122,7 +118,6 @@ def handle_message(event):
     text = event.message.text.strip()
     print(f"收到消息: {text} from {user_id}")
 
-    # 1. 检查是否是要数量的指令
     if text.startswith("要"):
         try:
             match = re.search(r'要(\d+)个', text)
@@ -143,13 +138,11 @@ def handle_message(event):
                 line_bot_api.push_message(user_id, TextSendMessage(text="一次最多要100个，请分批领取"))
                 return
 
-            # 2. 获取可用联系人
             available = load_available_contacts()
             if not available:
                 line_bot_api.push_message(user_id, TextSendMessage(text="🎉 所有名片已经发完了！"))
                 return
 
-            # 3. 取出前 N 个
             to_send = available[:count]
             if len(to_send) < count:
                 line_bot_api.push_message(
@@ -157,16 +150,13 @@ def handle_message(event):
                     TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
                 )
 
-            # 4. 逐一发送名片
             success_count = 0
             for contact in to_send:
                 if send_contact_card(user_id, contact):
                     success_count += 1
 
-            # 5. 标记为已发送
             mark_as_sent(to_send)
 
-            # 6. 发送完成通知
             remaining = len(available) - len(to_send)
             line_bot_api.push_message(
                 user_id,
@@ -181,7 +171,6 @@ def handle_message(event):
             )
         return
 
-    # 2. 其他指令：显示帮助
     else:
         line_bot_api.push_message(
             user_id,
