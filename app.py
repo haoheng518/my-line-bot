@@ -4,7 +4,7 @@ import csv
 import re
 from flask import Flask, request, abort
 
-# 导入 v3 版本的模块
+# ✅ 正确的导入方式：从 linebot.v3 导入
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -15,8 +15,7 @@ from linebot.v3.messaging import (
     ReplyMessageRequest,
     TextMessage
 )
-# ✅ 直接从子模块导入 ContactMessage
-from linebot.v3.messaging.models.contact_message import ContactMessage
+from linebot.v3.messaging.models.contact_message import ContactMessage  # ✅ 正确的子模块路径
 from linebot.v3.webhooks import (
     MessageEvent,
     TextMessageContent
@@ -36,10 +35,7 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     print("错误: 缺少必要的环境变量!")
     sys.exit(1)
 
-# 初始化 v3 WebhookHandler
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
-
-# 初始化 v3 API 客户端配置
 configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 
 CSV_FILE = 'contacts.csv'
@@ -48,7 +44,6 @@ SENT_FILE = 'sent_contacts.csv'
 # ==================== 核心功能函数 ====================
 
 def load_available_contacts():
-    """读取CSV，返回还没被发送过的联系人列表"""
     try:
         if not os.path.exists(CSV_FILE):
             print(f"警告: CSV 文件 '{CSV_FILE}' 不存在")
@@ -80,13 +75,11 @@ def load_available_contacts():
         available = [c for c in all_contacts if c['phone'] not in sent_phones]
         print(f"总共 {len(all_contacts)} 个联系人，已发送 {len(sent_phones)} 个，剩余 {len(available)} 个")
         return available
-
     except Exception as e:
         print(f"读取 CSV 失败: {e}")
         return []
 
 def mark_as_sent(contacts):
-    """将已发送的联系人记录到 sent_contacts.csv"""
     try:
         with open(SENT_FILE, 'a', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
@@ -96,10 +89,9 @@ def mark_as_sent(contacts):
     except Exception as e:
         print(f"标记已发送失败: {e}")
 
-def send_contact_card_v3(user_id, contact):
+def send_contact_card(user_id, contact):
     """使用 v3 API 发送 LINE 原生联系人卡片"""
     try:
-        # ✅ 使用正确的 ContactMessage 类
         contact_message = ContactMessage(
             display_name=contact['name'],
             name=contact['name'],
@@ -114,10 +106,10 @@ def send_contact_card_v3(user_id, contact):
                     messages=[contact_message]
                 )
             )
-        print(f"✅ (v3) 已发送 {contact['name']} 的联系人卡片")
+        print(f"✅ 已发送 {contact['name']} 的联系人卡片")
         return True
     except Exception as e:
-        print(f"(v3) 发送联系人卡片失败: {e}")
+        print(f"发送联系人卡片失败: {e}")
         return False
 
 # ==================== 路由和处理器 ====================
@@ -129,7 +121,6 @@ def callback():
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
-        print("签名验证失败")
         abort(400)
     return 'OK'
 
@@ -192,7 +183,7 @@ def handle_message(event):
 
             success_count = 0
             for contact in to_send:
-                if send_contact_card_v3(user_id, contact):
+                if send_contact_card(user_id, contact):
                     success_count += 1
 
             mark_as_sent(to_send)
