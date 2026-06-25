@@ -12,7 +12,9 @@ from linebot.v3.messaging import (
     ApiClient,
     MessagingApi,
     PushMessageRequest,
-    ContactMessage  # v3 版本的 ContactMessage
+    ReplyMessageRequest,
+    Contact,  # ✅ 正确的类名是 Contact，不是 ContactMessage
+    TextMessage
 )
 from linebot.v3.webhooks import (
     MessageEvent,
@@ -43,9 +45,9 @@ CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
 
 # ==================== 核心功能函数 ====================
+
 def load_available_contacts():
     """读取CSV，返回还没被发送过的联系人列表"""
-    # ... (此部分逻辑与之前相同，保持不变) ...
     try:
         if not os.path.exists(CSV_FILE):
             print(f"警告: CSV 文件 '{CSV_FILE}' 不存在")
@@ -84,7 +86,6 @@ def load_available_contacts():
 
 def mark_as_sent(contacts):
     """将已发送的联系人记录到 sent_contacts.csv"""
-    # ... (此部分逻辑与之前相同，保持不变) ...
     try:
         with open(SENT_FILE, 'a', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
@@ -97,14 +98,13 @@ def mark_as_sent(contacts):
 def send_contact_card_v3(user_id, contact):
     """使用 v3 API 发送 LINE 原生联系人卡片"""
     try:
-        # 创建联系人卡片消息对象
-        contact_message = ContactMessage(
+        # ✅ 使用 Contact 类（不是 ContactMessage）
+        contact_message = Contact(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
         )
         
-        # 使用 v3 的 ApiClient 发送 push 消息
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
             line_bot_api.push_message(
@@ -123,7 +123,6 @@ def send_contact_card_v3(user_id, contact):
 
 @app.route("/callback", methods=['POST'])
 def callback():
-    """LINE Webhook 回调 - 使用 v3 handler"""
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     try:
@@ -135,19 +134,16 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    """使用 v3 版本的 MessageEvent 和 TextMessageContent"""
     user_id = event.source.user_id
     text = event.message.text
     print(f"收到消息: {text} from {user_id}")
 
     if text.startswith("要"):
         try:
-            # 解析数量
             match = re.search(r'要(\d+)个', text)
             if not match:
                 match = re.search(r'要(\d+)', text)
             if not match:
-                # 使用 v3 的 ApiClient 回复消息
                 with ApiClient(configuration) as api_client:
                     line_bot_api = MessagingApi(api_client)
                     line_bot_api.reply_message(
@@ -170,7 +166,6 @@ def handle_message(event):
                     )
                 return
 
-            # 获取可用联系人
             available = load_available_contacts()
             if not available:
                 with ApiClient(configuration) as api_client:
@@ -194,16 +189,13 @@ def handle_message(event):
                         )
                     )
 
-            # 逐一发送联系人卡片
             success_count = 0
             for contact in to_send:
                 if send_contact_card_v3(user_id, contact):
                     success_count += 1
 
-            # 标记为已发送
             mark_as_sent(to_send)
 
-            # 发送完成通知
             remaining = len(available) - len(to_send)
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)
@@ -227,7 +219,6 @@ def handle_message(event):
         return
 
     else:
-        # 处理其他文本消息
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
             line_bot_api.reply_message(
