@@ -2,8 +2,8 @@ import os
 import pandas as pd
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from linebot.models.send_messages import ContactMessage  # ✅ 关键修正：正确的导入路径
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, Contact  # ✅ 使用 Contact
 
 app = Flask(__name__)
 
@@ -37,7 +37,7 @@ def load_contacts():
 
 def send_contact_card(user_id, contact):
     """发送联系人名片消息"""
-    contact_message = ContactMessage(
+    contact_message = Contact(  # ✅ 使用 Contact 类
         display_name=contact['name'],
         name=contact['name'],
         phone_number=contact['phone']
