@@ -9,40 +9,8 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
+    Contact  # ✅ 正确的类名是 Contact，不是 ContactMessage
 )
-
-# ==================== 诊断代码：打印所有可用的类 ====================
-print("=" * 50)
-print("🔍 正在诊断 linebot.models 可用的类...")
-try:
-    import linebot.models
-    available_classes = [x for x in dir(linebot.models) if x[0].isupper()]
-    print(f"linebot.models 中可用的类: {available_classes}")
-except Exception as e:
-    print(f"诊断 linebot.models 失败: {e}")
-
-print("-" * 50)
-
-print("🔍 正在诊断 linebot.v3.messaging 可用的类...")
-try:
-    from linebot.v3 import messaging
-    available_classes_v3 = [x for x in dir(messaging) if x[0].isupper()]
-    print(f"linebot.v3.messaging 中可用的类: {available_classes_v3}")
-except Exception as e:
-    print(f"诊断 linebot.v3.messaging 失败: {e}")
-
-print("-" * 50)
-
-print("🔍 正在诊断 linebot.v3.messaging.models 可用的类...")
-try:
-    from linebot.v3.messaging import models
-    available_classes_v3_models = [x for x in dir(models) if x[0].isupper()]
-    print(f"linebot.v3.messaging.models 中可用的类: {available_classes_v3_models}")
-except Exception as e:
-    print(f"诊断 linebot.v3.messaging.models 失败: {e}")
-
-print("=" * 50)
-# ==================== 诊断代码结束 ====================
 
 app = Flask(__name__)
 
@@ -116,56 +84,17 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """尝试发送 LINE 联系人卡片 - 使用诊断发现的正确类名"""
+    """发送 LINE 原生联系人卡片"""
     try:
-        # 先尝试使用 v3 的 ContactMessage
-        try:
-            from linebot.v3.messaging import ContactMessage
-            print("✅ 使用 linebot.v3.messaging.ContactMessage")
-            contact_message = ContactMessage(
-                display_name=contact['name'],
-                name=contact['name'],
-                phone_number=contact['phone']
-            )
-            # 这里需要 v3 的 ApiClient，暂时用旧版方式
-            # 如果导入成功，我们后续再调整
-            return False
-        except ImportError:
-            pass
-        
-        # 再尝试使用 v2 的 ContactMessage
-        try:
-            from linebot.models import ContactMessage
-            print("✅ 使用 linebot.models.ContactMessage")
-            contact_message = ContactMessage(
-                display_name=contact['name'],
-                name=contact['name'],
-                phone_number=contact['phone']
-            )
-            line_bot_api.push_message(user_id, contact_message)
-            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
-            return True
-        except ImportError:
-            pass
-        
-        # 尝试 Contact（不带 Message）
-        try:
-            from linebot.models import Contact
-            print("✅ 使用 linebot.models.Contact")
-            contact_message = Contact(
-                display_name=contact['name'],
-                name=contact['name'],
-                phone_number=contact['phone']
-            )
-            line_bot_api.push_message(user_id, contact_message)
-            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
-            return True
-        except ImportError:
-            pass
-        
-        print("❌ 所有尝试都失败了，找不到联系人卡片类")
-        return False
-        
+        # ✅ 使用 Contact 类
+        contact_message = Contact(
+            display_name=contact['name'],
+            name=contact['name'],
+            phone_number=contact['phone']
+        )
+        line_bot_api.push_message(user_id, contact_message)
+        print(f"✅ 已发送 {contact['name']} 的联系人卡片")
+        return True
     except Exception as e:
         print(f"发送联系人卡片失败: {e}")
         return False
