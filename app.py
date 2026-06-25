@@ -11,6 +11,13 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
+    FlexSendMessage,
+    BubbleContainer,
+    BoxComponent,
+    TextComponent,
+    ButtonComponent,
+    URIAction,
+    SeparatorComponent
 )
 
 app = Flask(__name__)
@@ -19,7 +26,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-print("=== 启动 LINE Bot 服务 (HTTP API 方案) ===")
+print("=== 启动 LINE Bot 服务 (vCard 下载方案) ===")
 print(f"LINE_CHANNEL_SECRET 是否设置: {bool(LINE_CHANNEL_SECRET)}")
 print(f"LINE_CHANNEL_ACCESS_TOKEN 是否设置: {bool(LINE_CHANNEL_ACCESS_TOKEN)}")
 
@@ -37,6 +44,8 @@ except Exception as e:
 
 CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
+
+# ==================== 核心功能 ====================
 
 def load_available_contacts():
     try:
@@ -84,34 +93,108 @@ def mark_as_sent(contacts):
     except Exception as e:
         print(f"标记已发送失败: {e}")
 
+def generate_vcard(contact):
+    """生成 vCard 格式文本"""
+    name = contact['name']
+    phone = contact['phone']
+    return f"""BEGIN:VCARD
+VERSION:3.0
+FN:{name}
+TEL:{phone}
+END:VCARD"""
+
+def create_contact_flex(contact):
+    """创建包含 vCard 下载按钮的 Flex Message"""
+    name = contact['name']
+    phone = contact['phone']
+    
+    # 生成 vCard 内容
+    vcard = generate_vcard(contact)
+    # URL 编码 vCard 内容（用于 data URI）
+    import urllib.parse
+    encoded_vcard = urllib.parse.quote(vcard)
+    data_uri = f"data:text/vcard;charset=utf-8,{encoded_vcard}"
+    
+    return FlexSendMessage(
+        alt_text=f"📇 {name} 的名片",
+        contents=BubbleContainer(
+            direction='ltr',
+            header=BoxComponent(
+                layout='vertical',
+                contents=[
+                    TextComponent(
+                        text='📇 联系人名片',
+                        weight='bold',
+                        size='sm',
+                        color='#FFFFFF'
+                    )
+                ],
+                backgroundColor='#00B900'
+            ),
+            body=BoxComponent(
+                layout='vertical',
+                spacing='sm',
+                contents=[
+                    TextComponent(
+                        text=name,
+                        weight='bold',
+                        size='lg',
+                        wrap=True
+                    ),
+                    SeparatorComponent(),
+                    BoxComponent(
+                        layout='horizontal',
+                        spacing='sm',
+                        contents=[
+                            TextComponent(
+                                text='📞 电话',
+                                size='sm',
+                                color='#AAAAAA',
+                                flex=1
+                            ),
+                            TextComponent(
+                                text=phone,
+                                size='sm',
+                                color='#000000',
+                                flex=2
+                            )
+                        ]
+                    )
+                ]
+            ),
+            footer=BoxComponent(
+                layout='vertical',
+                spacing='sm',
+                contents=[
+                    ButtonComponent(
+                        style='primary',
+                        color='#00B900',
+                        action=URIAction(
+                            label='📥 保存到通讯录',
+                            uri=data_uri
+                        )
+                    ),
+                    ButtonComponent(
+                        style='link',
+                        action=URIAction(
+                            label='📋 复制号码',
+                            uri=f'tel:{phone}'
+                        )
+                    )
+                ]
+            )
+        )
+    )
+
 def send_contact_card(user_id, contact):
-    """通过 HTTP API 直接发送联系人卡片"""
+    """发送联系人名片 Flex Message"""
     try:
-        url = "https://api.line.me/v2/bot/message/push"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-        }
-        payload = {
-            "to": user_id,
-            "messages": [
-                {
-                    "type": "contact",
-                    "displayName": contact['name'],
-                    "name": contact['name'],
-                    "phoneNumber": contact['phone']
-                }
-            ]
-        }
-        response = requests.post(url, headers=headers, json=payload)
-        if response.status_code == 200:
-            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
-            return True
-        else:
-            print(f"❌ 发送失败: {response.status_code} - {response.text}")
-            return False
+        flex_message = create_contact_flex(contact)
+        line_bot_api.push_message(user_id, flex_message)
+        print(f"✅ 已发送 {contact['name']} 的联系人名片")
+        return True
     except Exception as e:
-        print(f"发送联系人卡片失败: {e}")
+        print(f"发送联系人名片失败: {e}")
         return False
 
 @app.route("/callback", methods=['POST'])
@@ -169,7 +252,7 @@ def handle_message(event):
             remaining = len(available) - len(to_send)
             line_bot_api.push_message(
                 user_id,
-                TextSendMessage(text=f"✅ 已发送 {success_count} 张联系人卡片\n📊 剩余 {remaining} 个待发")
+                TextSendMessage(text=f"✅ 已发送 {success_count} 张名片\n📊 剩余 {remaining} 个待发")
             )
 
         except Exception as e:
@@ -183,7 +266,7 @@ def handle_message(event):
     else:
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张联系人卡片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
+            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张名片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
         )
 
 if __name__ == "__main__":
