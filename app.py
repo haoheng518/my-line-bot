@@ -2,7 +2,6 @@ import os
 import sys
 import csv
 import re
-import inspect
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -11,6 +10,7 @@ from linebot.models import (
     TextMessage,
     TextSendMessage,
 )
+from linebot.models.send_messages import ContactMessage  # ✅ 3.11.0 版本的导入路径
 
 app = Flask(__name__)
 
@@ -36,31 +36,6 @@ except Exception as e:
 
 CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
-
-# ==================== 动态查找联系人名片类 ====================
-def find_contact_class():
-    """动态查找 linebot.models 中用于发送联系人名片的类"""
-    import linebot.models
-    # 候选类名列表
-    candidates = ['Contact', 'ContactMessage', 'ContactObject', 'UserContact']
-    
-    for name in candidates:
-        if hasattr(linebot.models, name):
-            cls = getattr(linebot.models, name)
-            # 检查这个类是否有预期的属性或方法
-            if hasattr(cls, 'display_name') or hasattr(cls, '__init__'):
-                print(f"✅ 找到联系人名片类: {name}")
-                return cls
-    
-    # 如果都找不到，打印所有可用的类帮助诊断
-    all_classes = [attr for attr in dir(linebot.models) if attr[0].isupper()]
-    print(f"❌ 未找到联系人名片类。可用的类有: {all_classes}")
-    return None
-
-# 在启动时查找并保存联系人名片类
-ContactClass = find_contact_class()
-
-# ==================== 核心功能函数 ====================
 
 def load_available_contacts():
     try:
@@ -110,12 +85,8 @@ def mark_as_sent(contacts):
 
 def send_contact_card(user_id, contact):
     """发送 LINE 原生联系人卡片"""
-    if ContactClass is None:
-        print("❌ 联系人名片类未找到，无法发送")
-        return False
-        
     try:
-        contact_message = ContactClass(
+        contact_message = ContactMessage(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
