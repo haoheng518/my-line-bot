@@ -42,8 +42,7 @@ CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
 
 # ==================== ImgBB 图床配置 ====================
-# 🔑 请去 https://imgbb.com 注册免费账号，获取你的 API Key 替换下面这行
-IMGBB_API_KEY = "你的ImgBB_API_Key"
+IMGBB_API_KEY = "ff882946769eae6ae4133abbb791945e"
 
 # ==================== 核心功能函数 ====================
 
