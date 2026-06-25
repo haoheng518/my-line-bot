@@ -5,12 +5,7 @@ import re
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import (
-    MessageEvent,
-    TextMessage,
-    TextSendMessage,
-    Contact
-)
+import linebot.models as line_models  # 导入整个模块
 
 app = Flask(__name__)
 
@@ -88,9 +83,20 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """发送联系人名片消息 - 使用 Contact 类"""
+    """发送联系人名片消息 - 使用 line_models 模块引用"""
     try:
-        contact_message = Contact(
+        # 尝试使用最可能的类名，如果出错则打印诊断信息
+        if hasattr(line_models, 'Contact'):
+            contact_class = line_models.Contact
+        elif hasattr(line_models, 'ContactMessage'):
+            contact_class = line_models.ContactMessage
+        else:
+            # 如果都没有，打印所有可用的类名帮助诊断
+            available_classes = [attr for attr in dir(line_models) if attr[0].isupper()]
+            print(f"可用的类: {available_classes}")
+            raise Exception("找不到联系人名片类")
+
+        contact_message = contact_class(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
@@ -112,7 +118,7 @@ def callback():
         abort(400)
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(line_models.MessageEvent, message=line_models.TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
@@ -126,28 +132,28 @@ def handle_message(event):
             if not match:
                 line_bot_api.push_message(
                     user_id,
-                    TextSendMessage(text="请发送「要10个粉」或「要20个」这样的指令")
+                    line_models.TextSendMessage(text="请发送「要10个粉」或「要20个」这样的指令")
                 )
                 return
 
             count = int(match.group(1))
             if count <= 0:
-                line_bot_api.push_message(user_id, TextSendMessage(text="数量必须大于0"))
+                line_bot_api.push_message(user_id, line_models.TextSendMessage(text="数量必须大于0"))
                 return
             if count > 100:
-                line_bot_api.push_message(user_id, TextSendMessage(text="一次最多要100个，请分批领取"))
+                line_bot_api.push_message(user_id, line_models.TextSendMessage(text="一次最多要100个，请分批领取"))
                 return
 
             available = load_available_contacts()
             if not available:
-                line_bot_api.push_message(user_id, TextSendMessage(text="🎉 所有名片已经发完了！"))
+                line_bot_api.push_message(user_id, line_models.TextSendMessage(text="🎉 所有名片已经发完了！"))
                 return
 
             to_send = available[:count]
             if len(to_send) < count:
                 line_bot_api.push_message(
                     user_id,
-                    TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
+                    line_models.TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
                 )
 
             success_count = 0
@@ -160,21 +166,21 @@ def handle_message(event):
             remaining = len(available) - len(to_send)
             line_bot_api.push_message(
                 user_id,
-                TextSendMessage(text=f"✅ 已发送 {success_count} 张名片\n📊 剩余 {remaining} 个待发")
+                line_models.TextSendMessage(text=f"✅ 已发送 {success_count} 张名片\n📊 剩余 {remaining} 个待发")
             )
 
         except Exception as e:
             print(f"处理指令出错: {e}")
             line_bot_api.push_message(
                 user_id,
-                TextSendMessage(text="处理出错，请稍后再试")
+                line_models.TextSendMessage(text="处理出错，请稍后再试")
             )
         return
 
     else:
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张名片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
+            line_models.TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张名片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
         )
 
 if __name__ == "__main__":
