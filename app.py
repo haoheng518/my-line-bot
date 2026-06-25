@@ -3,23 +3,46 @@ import sys
 import csv
 import re
 from flask import Flask, request, abort
-
-# ✅ 正确的导入方式：从 linebot.v3 导入
-from linebot.v3 import WebhookHandler
-from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    Configuration,
-    ApiClient,
-    MessagingApi,
-    PushMessageRequest,
-    ReplyMessageRequest,
-    TextMessage
-)
-from linebot.v3.messaging.models.contact_message import ContactMessage  # ✅ 正确的子模块路径
-from linebot.v3.webhooks import (
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import (
     MessageEvent,
-    TextMessageContent
+    TextMessage,
+    TextSendMessage,
 )
+
+# ==================== 诊断代码：打印所有可用的类 ====================
+print("=" * 50)
+print("🔍 正在诊断 linebot.models 可用的类...")
+try:
+    import linebot.models
+    available_classes = [x for x in dir(linebot.models) if x[0].isupper()]
+    print(f"linebot.models 中可用的类: {available_classes}")
+except Exception as e:
+    print(f"诊断 linebot.models 失败: {e}")
+
+print("-" * 50)
+
+print("🔍 正在诊断 linebot.v3.messaging 可用的类...")
+try:
+    from linebot.v3 import messaging
+    available_classes_v3 = [x for x in dir(messaging) if x[0].isupper()]
+    print(f"linebot.v3.messaging 中可用的类: {available_classes_v3}")
+except Exception as e:
+    print(f"诊断 linebot.v3.messaging 失败: {e}")
+
+print("-" * 50)
+
+print("🔍 正在诊断 linebot.v3.messaging.models 可用的类...")
+try:
+    from linebot.v3.messaging import models
+    available_classes_v3_models = [x for x in dir(models) if x[0].isupper()]
+    print(f"linebot.v3.messaging.models 中可用的类: {available_classes_v3_models}")
+except Exception as e:
+    print(f"诊断 linebot.v3.messaging.models 失败: {e}")
+
+print("=" * 50)
+# ==================== 诊断代码结束 ====================
 
 app = Flask(__name__)
 
@@ -27,7 +50,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-print("=== 启动 LINE Bot 服务 (v3) ===")
+print("=== 启动 LINE Bot 服务 ===")
 print(f"LINE_CHANNEL_SECRET 是否设置: {bool(LINE_CHANNEL_SECRET)}")
 print(f"LINE_CHANNEL_ACCESS_TOKEN 是否设置: {bool(LINE_CHANNEL_ACCESS_TOKEN)}")
 
@@ -35,13 +58,16 @@ if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     print("错误: 缺少必要的环境变量!")
     sys.exit(1)
 
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
-configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
+try:
+    line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+    handler = WebhookHandler(LINE_CHANNEL_SECRET)
+    print("LINE Bot API 初始化成功")
+except Exception as e:
+    print(f"LINE Bot API 初始化失败: {e}")
+    sys.exit(1)
 
 CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
-
-# ==================== 核心功能函数 ====================
 
 def load_available_contacts():
     try:
@@ -90,24 +116,56 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """使用 v3 API 发送 LINE 原生联系人卡片"""
+    """尝试发送 LINE 联系人卡片 - 使用诊断发现的正确类名"""
     try:
-        contact_message = ContactMessage(
-            display_name=contact['name'],
-            name=contact['name'],
-            phone_number=contact['phone']
-        )
-        
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.push_message(
-                PushMessageRequest(
-                    to=user_id,
-                    messages=[contact_message]
-                )
+        # 先尝试使用 v3 的 ContactMessage
+        try:
+            from linebot.v3.messaging import ContactMessage
+            print("✅ 使用 linebot.v3.messaging.ContactMessage")
+            contact_message = ContactMessage(
+                display_name=contact['name'],
+                name=contact['name'],
+                phone_number=contact['phone']
             )
-        print(f"✅ 已发送 {contact['name']} 的联系人卡片")
-        return True
+            # 这里需要 v3 的 ApiClient，暂时用旧版方式
+            # 如果导入成功，我们后续再调整
+            return False
+        except ImportError:
+            pass
+        
+        # 再尝试使用 v2 的 ContactMessage
+        try:
+            from linebot.models import ContactMessage
+            print("✅ 使用 linebot.models.ContactMessage")
+            contact_message = ContactMessage(
+                display_name=contact['name'],
+                name=contact['name'],
+                phone_number=contact['phone']
+            )
+            line_bot_api.push_message(user_id, contact_message)
+            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
+            return True
+        except ImportError:
+            pass
+        
+        # 尝试 Contact（不带 Message）
+        try:
+            from linebot.models import Contact
+            print("✅ 使用 linebot.models.Contact")
+            contact_message = Contact(
+                display_name=contact['name'],
+                name=contact['name'],
+                phone_number=contact['phone']
+            )
+            line_bot_api.push_message(user_id, contact_message)
+            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
+            return True
+        except ImportError:
+            pass
+        
+        print("❌ 所有尝试都失败了，找不到联系人卡片类")
+        return False
+        
     except Exception as e:
         print(f"发送联系人卡片失败: {e}")
         return False
@@ -124,10 +182,10 @@ def callback():
         abort(400)
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessageContent)
+@handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
-    text = event.message.text
+    text = event.message.text.strip()
     print(f"收到消息: {text} from {user_id}")
 
     if text.startswith("要"):
@@ -136,50 +194,28 @@ def handle_message(event):
             if not match:
                 match = re.search(r'要(\d+)', text)
             if not match:
-                with ApiClient(configuration) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.reply_message(
-                        ReplyMessageRequest(
-                            reply_token=event.reply_token,
-                            messages=[TextMessage(text="请发送「要10个粉」或「要20个」这样的指令")]
-                        )
-                    )
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text="请发送「要10个粉」或「要20个」这样的指令")
+                )
                 return
 
             count = int(match.group(1))
             if count <= 0 or count > 100:
-                with ApiClient(configuration) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.reply_message(
-                        ReplyMessageRequest(
-                            reply_token=event.reply_token,
-                            messages=[TextMessage(text="请输入1-100之间的数字")]
-                        )
-                    )
+                line_bot_api.push_message(user_id, TextSendMessage(text="请输入1-100之间的数字"))
                 return
 
             available = load_available_contacts()
             if not available:
-                with ApiClient(configuration) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.reply_message(
-                        ReplyMessageRequest(
-                            reply_token=event.reply_token,
-                            messages=[TextMessage(text="🎉 所有名片已经发完了！")]
-                        )
-                    )
+                line_bot_api.push_message(user_id, TextSendMessage(text="🎉 所有名片已经发完了！"))
                 return
 
             to_send = available[:count]
             if len(to_send) < count:
-                with ApiClient(configuration) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.push_message(
-                        PushMessageRequest(
-                            to=user_id,
-                            messages=[TextMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")]
-                        )
-                    )
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
+                )
 
             success_count = 0
             for contact in to_send:
@@ -189,36 +225,24 @@ def handle_message(event):
             mark_as_sent(to_send)
 
             remaining = len(available) - len(to_send)
-            with ApiClient(configuration) as api_client:
-                line_bot_api = MessagingApi(api_client)
-                line_bot_api.push_message(
-                    PushMessageRequest(
-                        to=user_id,
-                        messages=[TextMessage(text=f"✅ 已发送 {success_count} 张联系人卡片\n📊 剩余 {remaining} 个待发")]
-                    )
-                )
+            line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text=f"✅ 已发送 {success_count} 张联系人卡片\n📊 剩余 {remaining} 个待发")
+            )
 
         except Exception as e:
             print(f"处理指令出错: {e}")
-            with ApiClient(configuration) as api_client:
-                line_bot_api = MessagingApi(api_client)
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text="处理出错，请稍后再试")]
-                    )
-                )
+            line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text="处理出错，请稍后再试")
+            )
         return
 
     else:
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="📋 使用说明：\n发送「要10个粉」领取10张联系人卡片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")]
-                )
-            )
+        line_bot_api.push_message(
+            user_id,
+            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张联系人卡片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
+        )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
