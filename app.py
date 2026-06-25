@@ -2,8 +2,6 @@ import os
 import sys
 import csv
 import re
-import requests
-import json
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -11,6 +9,7 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
+    ContactMessage
 )
 
 app = Flask(__name__)
@@ -53,7 +52,6 @@ def load_available_contacts():
                 first_cell = row[0].strip()
                 if first_cell in ['姓名', '名字', 'name', '序号', '编号']:
                     continue
-
                 name = row[0].strip()
                 phone_raw = row[1].strip() if len(row) > 1 else ''
                 phone = ''.join(filter(str.isdigit, phone_raw))
@@ -71,7 +69,6 @@ def load_available_contacts():
         available = [c for c in all_contacts if c['phone'] not in sent_phones]
         print(f"总共 {len(all_contacts)} 个联系人，已发送 {len(sent_phones)} 个，剩余 {len(available)} 个")
         return available
-
     except Exception as e:
         print(f"读取 CSV 失败: {e}")
         return []
@@ -87,37 +84,20 @@ def mark_as_sent(contacts):
         print(f"标记已发送失败: {e}")
 
 def send_contact_card(user_id, contact):
-    """直接用 LINE API 发送联系人卡片"""
+    """发送 LINE 原生联系人卡片"""
     try:
-        PUSH_API_URL = 'https://api.line.me/v2/bot/message/push'
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
-        }
-        
-        # 联系人卡片的 JSON 格式（LINE 原生联系人卡片）
-        payload = {
-            'to': user_id,
-            'messages': [{
-                'type': 'contact',
-                'displayName': contact['name'],
-                'name': contact['name'],
-                'phoneNumber': contact['phone']
-            }]
-        }
-        
-        response = requests.post(PUSH_API_URL, headers=headers, data=json.dumps(payload))
-        if response.status_code == 200:
-            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
-            return True
-        else:
-            print(f"❌ 发送失败: {response.text}")
-            return False
+        contact_message = ContactMessage(
+            display_name=contact['name'],
+            name=contact['name'],
+            phone_number=contact['phone']
+        )
+        line_bot_api.push_message(user_id, contact_message)
+        print(f"✅ 已发送 {contact['name']} 的联系人卡片")
+        return True
     except Exception as e:
         print(f"发送联系人卡片失败: {e}")
         return False
 
-# ==================== 路由和处理器 ====================
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
