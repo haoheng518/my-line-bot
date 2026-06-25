@@ -13,9 +13,10 @@ from linebot.v3.messaging import (
     MessagingApi,
     PushMessageRequest,
     ReplyMessageRequest,
-    Contact,  # ✅ 正确的类名是 Contact，不是 ContactMessage
     TextMessage
 )
+# ✅ 直接从子模块导入 ContactMessage
+from linebot.v3.messaging.models.contact_message import ContactMessage
 from linebot.v3.webhooks import (
     MessageEvent,
     TextMessageContent
@@ -98,8 +99,8 @@ def mark_as_sent(contacts):
 def send_contact_card_v3(user_id, contact):
     """使用 v3 API 发送 LINE 原生联系人卡片"""
     try:
-        # ✅ 使用 Contact 类（不是 ContactMessage）
-        contact_message = Contact(
+        # ✅ 使用正确的 ContactMessage 类
+        contact_message = ContactMessage(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
