@@ -2,6 +2,8 @@ import os
 import sys
 import csv
 import re
+import requests
+import json
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -37,7 +39,6 @@ CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
 
 def load_available_contacts():
-    """读取CSV，返回还没被发送过的联系人列表"""
     try:
         if not os.path.exists(CSV_FILE):
             print(f"警告: CSV 文件 '{CSV_FILE}' 不存在")
@@ -76,7 +77,6 @@ def load_available_contacts():
         return []
 
 def mark_as_sent(contacts):
-    """将已发送的联系人记录到 sent_contacts.csv"""
     try:
         with open(SENT_FILE, 'a', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
@@ -86,28 +86,35 @@ def mark_as_sent(contacts):
     except Exception as e:
         print(f"标记已发送失败: {e}")
 
-def send_contact_vcard(user_id, contact):
-    """发送 vCard 格式的电子名片（文本格式，可直接保存）"""
+def send_contact_card(user_id, contact):
+    """直接用 LINE API 发送联系人卡片"""
     try:
-        name = contact['name']
-        phone = contact['phone']
+        PUSH_API_URL = 'https://api.line.me/v2/bot/message/push'
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+        }
         
-        # 生成 vCard 格式文本
-        vcard = f"""BEGIN:VCARD
-VERSION:3.0
-FN:{name}
-TEL:{phone}
-END:VCARD"""
+        # 联系人卡片的 JSON 格式（LINE 原生联系人卡片）
+        payload = {
+            'to': user_id,
+            'messages': [{
+                'type': 'contact',
+                'displayName': contact['name'],
+                'name': contact['name'],
+                'phoneNumber': contact['phone']
+            }]
+        }
         
-        # 发送消息，包含 vCard 文本和使用说明
-        message = TextSendMessage(
-            text=f"📇 {name}\n📞 {phone}\n\n请复制以下内容，保存为 .vcf 文件，导入手机通讯录：\n\n{vcard}"
-        )
-        line_bot_api.push_message(user_id, message)
-        print(f"✅ 已发送 {name} 的 vCard")
-        return True
+        response = requests.post(PUSH_API_URL, headers=headers, data=json.dumps(payload))
+        if response.status_code == 200:
+            print(f"✅ 已发送 {contact['name']} 的联系人卡片")
+            return True
+        else:
+            print(f"❌ 发送失败: {response.text}")
+            return False
     except Exception as e:
-        print(f"发送 vCard 失败: {e}")
+        print(f"发送联系人卡片失败: {e}")
         return False
 
 # ==================== 路由和处理器 ====================
@@ -161,7 +168,7 @@ def handle_message(event):
 
             success_count = 0
             for contact in to_send:
-                if send_contact_vcard(user_id, contact):
+                if send_contact_card(user_id, contact):
                     success_count += 1
 
             mark_as_sent(to_send)
@@ -169,7 +176,7 @@ def handle_message(event):
             remaining = len(available) - len(to_send)
             line_bot_api.push_message(
                 user_id,
-                TextSendMessage(text=f"✅ 已发送 {success_count} 张电子名片\n📊 剩余 {remaining} 个待发")
+                TextSendMessage(text=f"✅ 已发送 {success_count} 张联系人卡片\n📊 剩余 {remaining} 个待发")
             )
 
         except Exception as e:
@@ -183,7 +190,7 @@ def handle_message(event):
     else:
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张电子名片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
+            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张联系人卡片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
         )
 
 if __name__ == "__main__":
