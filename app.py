@@ -4,12 +4,7 @@ import csv
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import (  # ✅ 使用正确的导入
-    MessageEvent,
-    TextMessage,
-    TextSendMessage,
-    Contact
-)
+import linebot.models as line_models  # 导入整个模块
 
 app = Flask(__name__)
 
@@ -57,7 +52,6 @@ def load_contacts():
                 phone_raw = row[1].strip() if len(row) > 1 else ''
                 phone = ''.join(filter(str.isdigit, phone_raw))
 
-                # 放宽条件：只要是有效的数字电话就行
                 if len(phone) >= 9:
                     contacts.append({'name': name, 'phone': phone})
 
@@ -69,15 +63,29 @@ def load_contacts():
         return []
 
 def send_contact_card(user_id, contact):
-    """发送联系人名片消息"""
+    """发送联系人名片消息 - 使用通用导入"""
     try:
-        contact_message = Contact(  # ✅ 使用正确的 Contact 类
+        # 使用模块引用，避免类名路径问题
+        contact_message = line_models.Contact(
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
         )
         line_bot_api.push_message(user_id, contact_message)
         print(f"已发送名片: {contact['name']} ({contact['phone']})")
+    except AttributeError:
+        # 如果 Contact 不存在，尝试使用 ContactMessage
+        try:
+            contact_message = line_models.ContactMessage(
+                display_name=contact['name'],
+                name=contact['name'],
+                phone_number=contact['phone']
+            )
+            line_bot_api.push_message(user_id, contact_message)
+            print(f"已发送名片 (ContactMessage): {contact['name']}")
+        except Exception as e:
+            print(f"发送名片失败: {e}")
+            raise
     except Exception as e:
         print(f"发送名片失败: {e}")
         raise
@@ -93,7 +101,7 @@ def callback():
         abort(400)
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(line_models.MessageEvent, message=line_models.TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
@@ -103,31 +111,31 @@ def handle_message(event):
 
     if text == "所有名片":
         if not contacts:
-            line_bot_api.push_message(user_id, TextSendMessage(text="通讯录为空，请检查 CSV 文件。"))
+            line_bot_api.push_message(user_id, line_models.TextSendMessage(text="通讯录为空，请检查 CSV 文件。"))
             return
         for contact in contacts:
             send_contact_card(user_id, contact)
-        line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已发送 {len(contacts)} 张名片"))
+        line_bot_api.push_message(user_id, line_models.TextSendMessage(text=f"✅ 已发送 {len(contacts)} 张名片"))
 
     elif text.startswith("搜索"):
         keyword = text.replace("搜索", "").strip()
         if not keyword:
-            line_bot_api.push_message(user_id, TextSendMessage(text="请输入要搜索的姓名，例如「搜索 陳小姐」"))
+            line_bot_api.push_message(user_id, line_models.TextSendMessage(text="请输入要搜索的姓名，例如「搜索 陳小姐」"))
             return
         results = [c for c in contacts if keyword in c['name']]
         if not results:
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"❌ 未找到包含「{keyword}」的联系人"))
+            line_bot_api.push_message(user_id, line_models.TextSendMessage(text=f"❌ 未找到包含「{keyword}」的联系人"))
         elif len(results) == 1:
             send_contact_card(user_id, results[0])
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"✅ 已发送 {results[0]['name']} 的名片"))
+            line_bot_api.push_message(user_id, line_models.TextSendMessage(text=f"✅ 已发送 {results[0]['name']} 的名片"))
         else:
             names = "\n".join([f"{i+1}. {c['name']}" for i, c in enumerate(results[:10])])
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"找到 {len(results)} 个联系人，请输入完整姓名：\n{names}"))
+            line_bot_api.push_message(user_id, line_models.TextSendMessage(text=f"找到 {len(results)} 个联系人，请输入完整姓名：\n{names}"))
 
     else:
         line_bot_api.push_message(
             user_id,
-            TextSendMessage(text="请输入「所有名片」查看全部，或「搜索 姓名」查找特定联系人")
+            line_models.TextSendMessage(text="请输入「所有名片」查看全部，或「搜索 姓名」查找特定联系人")
         )
 
 if __name__ == "__main__":
