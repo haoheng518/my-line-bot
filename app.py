@@ -2,7 +2,7 @@ import os
 import sys
 import csv
 import re
-import json
+import base64
 import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
@@ -26,7 +26,7 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-print("=== 启动 LINE Bot 服务 (vCard 下载方案) ===")
+print("=== 启动 LINE Bot 服务 (vCard 上传方案) ===")
 print(f"LINE_CHANNEL_SECRET 是否设置: {bool(LINE_CHANNEL_SECRET)}")
 print(f"LINE_CHANNEL_ACCESS_TOKEN 是否设置: {bool(LINE_CHANNEL_ACCESS_TOKEN)}")
 
@@ -45,7 +45,8 @@ except Exception as e:
 CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
 
-# ==================== 核心功能 ====================
+# ==================== ImgBB 图床配置 ====================
+IMGBB_API_KEY = "ff882946769eae6ae4133abbb791945e"
 
 def load_available_contacts():
     try:
@@ -103,18 +104,106 @@ FN:{name}
 TEL:{phone}
 END:VCARD"""
 
+def upload_vcard_to_imgbb(vcard_text, filename):
+    """上传 vCard 文本到 ImgBB，返回公开 URL"""
+    try:
+        url = "https://api.imgbb.com/1/upload"
+        # 将文本转为 Base64
+        vcard_bytes = vcard_text.encode('utf-8')
+        image_base64 = base64.b64encode(vcard_bytes).decode('utf-8')
+        
+        payload = {
+            "key": IMGBB_API_KEY,
+            "image": image_base64,
+            "name": filename,
+        }
+        response = requests.post(url, data=payload, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                return result['data']['url']
+        print(f"ImgBB 上传失败: {response.text}")
+        return None
+    except Exception as e:
+        print(f"上传到图床失败: {e}")
+        return None
+
 def create_contact_flex(contact):
     """创建包含 vCard 下载按钮的 Flex Message"""
     name = contact['name']
     phone = contact['phone']
     
-    # 生成 vCard 内容
+    # 生成 vCard 并上传
     vcard = generate_vcard(contact)
-    # URL 编码 vCard 内容（用于 data URI）
-    import urllib.parse
-    encoded_vcard = urllib.parse.quote(vcard)
-    data_uri = f"data:text/vcard;charset=utf-8,{encoded_vcard}"
+    filename = f"{name}_{phone}.vcf"
+    vcard_url = upload_vcard_to_imgbb(vcard, filename)
     
+    if not vcard_url:
+        # 上传失败时，返回只有号码的简化版本
+        return FlexSendMessage(
+            alt_text=f"📇 {name} 的名片",
+            contents=BubbleContainer(
+                direction='ltr',
+                header=BoxComponent(
+                    layout='vertical',
+                    contents=[
+                        TextComponent(
+                            text='📇 联系人名片',
+                            weight='bold',
+                            size='sm',
+                            color='#FFFFFF'
+                        )
+                    ],
+                    backgroundColor='#00B900'
+                ),
+                body=BoxComponent(
+                    layout='vertical',
+                    spacing='sm',
+                    contents=[
+                        TextComponent(
+                            text=name,
+                            weight='bold',
+                            size='lg',
+                            wrap=True
+                        ),
+                        SeparatorComponent(),
+                        BoxComponent(
+                            layout='horizontal',
+                            spacing='sm',
+                            contents=[
+                                TextComponent(
+                                    text='📞 电话',
+                                    size='sm',
+                                    color='#AAAAAA',
+                                    flex=1
+                                ),
+                                TextComponent(
+                                    text=phone,
+                                    size='sm',
+                                    color='#000000',
+                                    flex=2
+                                )
+                            ]
+                        )
+                    ]
+                ),
+                footer=BoxComponent(
+                    layout='vertical',
+                    spacing='sm',
+                    contents=[
+                        ButtonComponent(
+                            style='link',
+                            action=URIAction(
+                                label='📋 复制号码',
+                                uri=f'tel:{phone}'
+                            )
+                        )
+                    ]
+                )
+            )
+        )
+    
+    # 正常返回带下载按钮的卡片
     return FlexSendMessage(
         alt_text=f"📇 {name} 的名片",
         contents=BubbleContainer(
@@ -171,7 +260,7 @@ def create_contact_flex(contact):
                         color='#00B900',
                         action=URIAction(
                             label='📥 保存到通讯录',
-                            uri=data_uri
+                            uri=vcard_url
                         )
                     ),
                     ButtonComponent(
