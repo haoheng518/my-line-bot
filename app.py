@@ -2,10 +2,19 @@ import os
 import sys
 import csv
 import re
+import requests
+import base64
+import qrcode
+from io import BytesIO
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-import linebot.models as line_models  # 导入整个模块
+from linebot.models import (
+    MessageEvent,
+    TextMessage,
+    TextSendMessage,
+    ImageSendMessage
+)
 
 app = Flask(__name__)
 
@@ -31,6 +40,9 @@ except Exception as e:
 
 CSV_FILE = 'contacts.csv'
 SENT_FILE = 'sent_contacts.csv'
+
+# ==================== ImgBB 图床配置 ====================
+IMGBB_API_KEY = "ff882946769eae6ae4133abbb791945e"
 
 def load_available_contacts():
     """读取CSV，返回还没被发送过的联系人列表"""
@@ -82,30 +94,84 @@ def mark_as_sent(contacts):
     except Exception as e:
         print(f"标记已发送失败: {e}")
 
-def send_contact_card(user_id, contact):
-    """发送联系人名片消息 - 使用 line_models 模块引用"""
-    try:
-        # 尝试使用最可能的类名，如果出错则打印诊断信息
-        if hasattr(line_models, 'Contact'):
-            contact_class = line_models.Contact
-        elif hasattr(line_models, 'ContactMessage'):
-            contact_class = line_models.ContactMessage
-        else:
-            # 如果都没有，打印所有可用的类名帮助诊断
-            available_classes = [attr for attr in dir(line_models) if attr[0].isupper()]
-            print(f"可用的类: {available_classes}")
-            raise Exception("找不到联系人名片类")
+def generate_contact_qr(contact):
+    """生成包含联系人信息的二维码图片，返回 BytesIO 对象"""
+    name = contact['name']
+    phone = contact['phone']
+    
+    # 构建 vCard 格式字符串
+    vcard = f"""BEGIN:VCARD
+VERSION:3.0
+FN:{name}
+TEL:{phone}
+END:VCARD"""
+    
+    # 生成二维码
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(vcard)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    img_bytes = BytesIO()
+    img.save(img_bytes, format='PNG')
+    img_bytes.seek(0)
+    return img_bytes
 
-        contact_message = contact_class(
-            display_name=contact['name'],
-            name=contact['name'],
-            phone_number=contact['phone']
-        )
-        line_bot_api.push_message(user_id, contact_message)
-        print(f"已发送名片: {contact['name']} ({contact['phone']})")
-        return True
+def upload_to_imgbb(image_bytes):
+    """上传图片到 ImgBB 免费图床，返回公开 URL"""
+    try:
+        url = "https://api.imgbb.com/1/upload"
+        image_base64 = base64.b64encode(image_bytes.getvalue()).decode('utf-8')
+        
+        payload = {
+            "key": IMGBB_API_KEY,
+            "image": image_base64,
+        }
+        response = requests.post(url, data=payload, timeout=30)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                return result['data']['url']
+            else:
+                print(f"ImgBB 上传失败: {result}")
+                return None
+        else:
+            print(f"ImgBB 上传失败，状态码: {response.status_code}")
+            return None
     except Exception as e:
-        print(f"发送名片失败: {e}")
+        print(f"上传到图床失败: {e}")
+        return None
+
+def send_contact_qr(user_id, contact):
+    """发送联系人二维码图片"""
+    try:
+        qr_image = generate_contact_qr(contact)
+        image_url = upload_to_imgbb(qr_image)
+        
+        if image_url:
+            line_bot_api.push_message(
+                user_id,
+                ImageSendMessage(
+                    original_content_url=image_url,
+                    preview_image_url=image_url
+                )
+            )
+            print(f"✅ 已发送 {contact['name']} 的二维码")
+            return True
+        else:
+            # 如果上传失败，发送文本提示
+            line_bot_api.push_message(
+                user_id,
+                TextSendMessage(text=f"⚠️ {contact['name']} 的二维码上传失败，请稍后重试")
+            )
+            return False
+    except Exception as e:
+        print(f"发送二维码失败: {e}")
         return False
 
 @app.route("/callback", methods=['POST'])
@@ -118,7 +184,7 @@ def callback():
         abort(400)
     return 'OK'
 
-@handler.add(line_models.MessageEvent, message=line_models.TextMessage)
+@handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
@@ -132,33 +198,33 @@ def handle_message(event):
             if not match:
                 line_bot_api.push_message(
                     user_id,
-                    line_models.TextSendMessage(text="请发送「要10个粉」或「要20个」这样的指令")
+                    TextSendMessage(text="请发送「要10个粉」或「要20个」这样的指令")
                 )
                 return
 
             count = int(match.group(1))
             if count <= 0:
-                line_bot_api.push_message(user_id, line_models.TextSendMessage(text="数量必须大于0"))
+                line_bot_api.push_message(user_id, TextSendMessage(text="数量必须大于0"))
                 return
             if count > 100:
-                line_bot_api.push_message(user_id, line_models.TextSendMessage(text="一次最多要100个，请分批领取"))
+                line_bot_api.push_message(user_id, TextSendMessage(text="一次最多要100个，请分批领取"))
                 return
 
             available = load_available_contacts()
             if not available:
-                line_bot_api.push_message(user_id, line_models.TextSendMessage(text="🎉 所有名片已经发完了！"))
+                line_bot_api.push_message(user_id, TextSendMessage(text="🎉 所有名片已经发完了！"))
                 return
 
             to_send = available[:count]
             if len(to_send) < count:
                 line_bot_api.push_message(
                     user_id,
-                    line_models.TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
+                    TextSendMessage(text=f"只剩 {len(to_send)} 个了，全部给您发完")
                 )
 
             success_count = 0
             for contact in to_send:
-                if send_contact_card(user_id, contact):
+                if send_contact_qr(user_id, contact):
                     success_count += 1
 
             mark_as_sent(to_send)
@@ -166,21 +232,21 @@ def handle_message(event):
             remaining = len(available) - len(to_send)
             line_bot_api.push_message(
                 user_id,
-                line_models.TextSendMessage(text=f"✅ 已发送 {success_count} 张名片\n📊 剩余 {remaining} 个待发")
+                TextSendMessage(text=f"✅ 已发送 {success_count} 张名片二维码\n📊 剩余 {remaining} 个待发")
             )
 
         except Exception as e:
             print(f"处理指令出错: {e}")
             line_bot_api.push_message(
                 user_id,
-                line_models.TextSendMessage(text="处理出错，请稍后再试")
+                TextSendMessage(text="处理出错，请稍后再试")
             )
         return
 
     else:
         line_bot_api.push_message(
             user_id,
-            line_models.TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张名片\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
+            TextSendMessage(text="📋 使用说明：\n发送「要10个粉」领取10张名片二维码\n发送「要50个」领取50张\n一次最多100个，发完自动标记")
         )
 
 if __name__ == "__main__":
