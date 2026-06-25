@@ -9,8 +9,9 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
-    ContactMessage
 )
+# ✅ 从正确的子模块导入 ContactMessage
+from linebot.models.send_messages import ContactMessage
 
 app = Flask(__name__)
 
