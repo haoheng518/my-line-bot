@@ -9,7 +9,7 @@ from linebot.models import (
     MessageEvent,
     TextMessage,
     TextSendMessage,
-    ContactMessage
+    Contact  # ✅ 使用 Contact 类
 )
 
 app = Flask(__name__)
@@ -85,7 +85,7 @@ def mark_as_sent(contacts):
 
 def send_contact_card(user_id, contact):
     try:
-        contact_message = ContactMessage(
+        contact_message = Contact(  # ✅ 使用 Contact 类
             display_name=contact['name'],
             name=contact['name'],
             phone_number=contact['phone']
