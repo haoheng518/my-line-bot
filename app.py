@@ -3,16 +3,14 @@ import pandas as pd
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage, ContactSendMessage
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, ContactMessage
 
-# 创建 Flask 应用实例 —— 这行是关键！
 app = Flask(__name__)
 
 # 从环境变量读取 LINE 配置
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-# 如果环境变量没有设置，程序会报错，提醒您配置
 if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
     raise ValueError("请设置环境变量 LINE_CHANNEL_ACCESS_TOKEN 和 LINE_CHANNEL_SECRET")
 
@@ -39,7 +37,7 @@ def load_contacts():
 
 def send_contact_card(user_id, contact):
     """发送联系人名片消息"""
-    contact_message = ContactSendMessage(
+    contact_message = ContactMessage(
         display_name=contact['name'],
         name=contact['name'],
         phone_number=contact['phone']
@@ -90,7 +88,6 @@ def handle_message(event):
             TextSendMessage(text="请输入「所有名片」查看全部，或「搜索 姓名」查找特定联系人")
         )
 
-# 这个判断让程序在本地运行时也能启动
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
